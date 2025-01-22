@@ -1,0 +1,15 @@
+name: stroke_lsoa_prediction
+channels:
+  - defaults
+dependencies:
+  - jupyter
+  - jupyterlab
+  - matplotlib
+  - numpy
+  - pandas
+  - pip
+  - python=3.10
+  - scipy
+  - statsmodels
+  - pip:
+    - polars
