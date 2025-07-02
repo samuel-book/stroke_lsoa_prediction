@@ -1,17 +1,46 @@
-# Stroke admissions prediction using deprivation
+# Stroke admissions prediction from patient age and deprivation level
 
-Want to predict number of stroke admissions when we know only the population demographics, specifically the number of people of various ages. Assume that in general older people are more likely to have strokes than younger people and so the age breakdown matters. Use the age bands: under 65, 65 to 70, 70 to 75, 75 to 80, and over 80.
+This document describes a method for calculating annual stroke admission numbers using patient ages and the level of deprivation of the areas they live in.
+The calculations are useful for situations when the real-life admission numbers cannot simply be observed, for example predicting the admissions in future years.
+The calculations use only population demographic data that we usually will have access to, namely the number of people in each age group and the deprivation level of the area.
+We use these data because stroke admissions data in England show the stroke incidence appears to increase with increasing patient ages and with areas that have higher levels of deprivation.
 
-Data available at the MSOA level:
-+ number of admissions from 2017 to 2019, from Hospital Episode Statistics (HES).
-+ number of people in each age band in mid-2020.
-+ deprivation ranking (Index of Multiple Deprivation, IMD).
 
-Data available at the national level:
-+ number of stroke admissions from people in each age band from 2017 to 2019, from the Sentinel Stroke National Audit Programme (SSNAP).
-+ number of people in each age band in January 2019.
+We have access to the following sources of data:
 
-Start by using the national-level data to find the pattern of stroke incidence with age, and then use the MSOA-level data to add in deprivation level.
+1. Data at the Middle Layer Super Output Area (MSOA, approx 5000-15000 people each) level:
+    + number of admissions from 2017 to 2019, from Hospital Episode Statistics (HES).
+    + number of people in each age band in mid-2020.
+    + deprivation ranking (Index of Multiple Deprivation, IMD).
+
+2. Data at the national level:
+    + number of stroke admissions from people in each age band from 2017 to 2019, from the Sentinel Stroke National Audit Programme (SSNAP).
+    + number of people in each age band in January 2019.
+
+We group patients into these age bands: under 65, 65 to 69, 70 to 74, 75 to 79, and at least 80.
+We group the MSOAS into five quantiles of deprivation level: 0-20% (most deprived), 20-40%, 40-60%, 60-80%, and 80-100% (least deprived).
+
+There is no data available with information on both patients' age band and deprivation level, and so we build the admissions model in two steps.
+We start by using the national-level data to find the pattern of stroke incidence with age, and then use the MSOA-level data to add in deprivation level.
+
+The resulting model lets us calculate admissions numbers for an area given the number of people in each age band and given the deprivation level.
+The total admissions $a$ are found by multiplying the number of people in each age band $n$ by a coefficient $P(\text{stroke | age, deprivation})$, and then summing the result for all age bands.
+The coefficients can be interpreted as the probability of a person having a stroke given that they're in that particular age band and from an area with that particular deprivation level.
+The formula for one area is as follows:
+
+
+\begin{equation}
+\begin{split}
+    a = &P(\text{stroke} | <65, \text{deprivation}) \cdot n_{<65} +\\
+    &P(\text{stroke} | 65\text{--}69, \text{deprivation}) \cdot n_{65\text{--}70} +\\
+    &P(\text{stroke} | 70\text{--}74, \text{deprivation}) \cdot n_{70\text{--}75} +\\
+    &P(\text{stroke} | 75\text{--}79, \text{deprivation}) \cdot n_{75\text{--}80} +\\
+    &P(\text{stroke} | \geq80, \text{deprivation}) \cdot n_{\geq80}
+\end{split}
+\end{equation}
+
+
+Starting with this equation for calculating admissions $a$, we then use the available data for $n$ to find the best values for the coefficients $P$. The best values are the ones that give the closest match between our calculated $a$ and the real observed number of admissions.
 
 ## Check data
 
@@ -19,7 +48,7 @@ First, look for any patterns in the MSOA-level admissions and demographic data. 
 
 We find that there is a good correlation between the number of people in the older age bands (age over 65) and the admissions numbers. The correlation becomes stronger when the MSOA are split by deprivation ranking. The more deprived areas are associated with more stroke admissions than less deprived areas.
 
-In the following scatter plots, the data from all MSOA is shown in every panel in grey. Then the data from only MSOA in the given deprivation quantile is overplotted in a colour. The x-axis shows the number of people in each age band in an MSOA and the y-axis shows the total number of admissions from each MSOA (note: the admissions are the total from all age bands, not just the age band relevant that to each panel).
+In the following scatter plots, the data from all MSOA is shown in every panel in grey. Then the data from only MSOAs in the given deprivation quantile is overplotted in a colour. The x-axis shows the number of people in each age band in an MSOA and the y-axis shows the total number of admissions from each MSOA (note: the admissions are the total from all age bands, not just the age band relevant that to each panel).
 
 ![](./images/scatter_age_admissions_by_imd.png)
 
@@ -31,7 +60,7 @@ The data for the most deprived quantiles (top row, purple points) tend to appear
 We have insufficient data to directly calculate the probability of stroke given age band and deprivation level. We have data for the number of admissions in each age band, and the number of admissions from each deprivation level, but not the data for each combination of age band and deprivation level.
 
 First we can calculate the effect on admissions from just age band.
-The SSNAP data contains the total number of admissions for each of the above age groups. We can combine this with the total number of people in England in each age band. This gives an estimate of the probability of stroke given a certain age band.
+The SSNAP data contains the total number of admissions in England for each of the five age groups. We can combine this with the total number of people in England in each age band. This gives an estimate of the probability of stroke given a certain age band.
 
 The results are as follows:
 
@@ -63,12 +92,13 @@ However we can use these derived coefficients as a starting point for finding a 
 We can find values for coefficients split by age band and by deprivation level by using an optimiser.
 In this case we can't directly calculate the coefficients from the HES data because the observed admission numbers will contain random errors.
 The HES data covers only three years and so we expect that by chance some MSOA will have recorded more than the true average and others less than the true average.
-This effect wasn't so important with the SSNAP data, which was on the national level, but with typically around 10 annual admissions per MSOA the effect can make a large difference in the HES data.
+This effect wasn't so important with the SSNAP data, which was on the national level, but the effect can make a large difference in the HES data which has typically around 10 annual admissions per MSOA.
 Therefore the goal is to find a set of coefficients that makes the best possible match to all MSOA simultaneously.
 
-Optimisers require a decent first estimate of the coefficients: the closer the better, and in particular they need to be to the right order of magnitude. Otherwise it's "garbage in, garbage out". For the first estimates, we'll use variations of the coefficients derived from the SSNAP data alone.
+Optimisers require a decent first estimate of the coefficients: the closer to the best possible values the better, and in particular they need to be on the right order of magnitude. Otherwise it's ``garbage in, garbage out''. For the first estimates, we'll use variations of the coefficients derived from the SSNAP data alone.
 
 We'll use two stages of optimisation:
+
 1. a genetic algorithm to explore a large number of combinations of coefficients, and
 2. a minimisation function to increase the precision of the results of the genetic algorithm.
 
@@ -80,12 +110,14 @@ There are some conditions imposed on the sets of coefficients.
 We assume that probability of stroke should increase with age, as was seen with the SSNAP-derived coefficients, and with deprivation. Any sets of coefficients that are generated are adjusted if necessary so that these conditions are always met.
 
 The fitness of a set of coefficients is judged by:
+
 + calculating the difference between predicted and observed total admissions, then
 + scaling these by a "wrongness factor" derived from comparing the predicted and observed admissions in each age band.
 
-The "wrongness factor" discourages the preference for sets of coefficients where most values are zero and only the values for one or two age bands are fine-tuned to make a good match for the total admissions. 
+The "wrongness factor" discourages sets of coefficients where most values are set to zero and only the values for one or two age bands are fine-tuned to make a good match for the total admissions.
+The set of coefficients with the best fitness is the one that has the smallest scaled difference in calculated and observed admissions.
 
-The genetic algorithm starts with 300 "individuals" or sets of coefficients. These are picked from 2002 options. The options are various combinations of scaled values of the SSNAP coefficients: for example, the most-deprived areas might use the starting values multiplied by 1.4, the least-deprived areas 0.6, and the other areas scales in between.
+The genetic algorithm starts with 300 ``individuals'' or sets of coefficients. These are picked from 2002 options. The options are various combinations of scaled values of the SSNAP coefficients: for example, the most-deprived areas might use the starting values multiplied by 1.4, the least-deprived areas 0.6, and the other areas scales in between. The allowed scales run from 0.2 to 2.0 in steps of 0.2 (i.e. 0.2, 0.4, 0.6, ..., 1.6, 1.8, 2.0).
 
 In each generation of the algorithm, the individuals are paired up and given a chance of swapping over a random string of their coefficients (crossover). Then the individuals have a chance of their coefficients being nudged slightly, for example from a scale of 1.4 to 1.32 (mutation). The algorithm uses high mutation and crossover rates to sample as much variation in the coefficient values as possible.
 Then a set of individuals are picked out to continue to the next generation with better sets of coefficients (according to the fitness tests) being more likely to be picked.
@@ -117,21 +149,21 @@ The minimisation is run separately on each of the 100 sets of best coefficients 
 
 We find 100 sets of minimised values.
 They still haven't converged onto one set of coefficients!
-This implies that there are many combinations of coefficients that are all pretty much as good as each other.
-In that case, there's no sense in reporting the coefficients too precisely because we know that any small adjustment in values won't drastically affect the accuracy of the results. Instead we only keep the coefficients to one significant figure for all age bands except the over 80 band, which has two significant figures because its values are typically an order of magnitude larger than most of the others.
+This suggests that there are many combinations of coefficients that are all pretty much as good as each other.
+In that case, there's no sense in reporting the coefficients too precisely because we know that any small adjustment in values won't drastically affect the accuracy of the results. Instead we only keep the coefficients to one significant figure for all age bands except the 80+ band, which has two significant figures because its values are typically an order of magnitude larger than most of the others.
 
 Before rounding, we calculate the r-squared values to assess the accuracy of the calculated vs observed admission numbers for each of the 100 sets of results.
 One of these sets has a slightly higher r-squared value than the rest: it is the only r-squared value that rounds to 0.594.
 However all 100 results have r-squared values that round to 0.591 or higher.
 
-We use the best set of coefficients as the final values and use the complete set of 100 sets to judge their precision using the range of values of each coefficient.
+We use that best set of coefficients as the final values and use the complete set of 100 sets to estimate their precision using the range of values of each coefficient.
 
 
 ## Results
 
 We use the following probabilities of stroke (and minimum-maximum range of values) by age band and deprivation level:
 
-| Deprivation quantile | Under 65 | 65 to 69 | 70 to 74 | 75 to 80 | Over 80 |
+| Deprivation quantile | Under 65 | 65 to 69 | 70 to 74 | 75 to 79 | At least 80 |
 | --- | --- | --- | --- | --- | --- |
 | 0% to 20% (most deprived) | 0.06% (0.05%--0.07%) | 0.3% (0.3%--0.5%) | 0.7% (0.4%--0.7%) | 0.7% (0.6%--0.9%) | 1.2% (1.2%--1.5%) |
 | 20% to 40% | 0.05% (0.05%--0.06%) | 0.3% (0.3%--0.4%) | 0.5% (0.4%--0.5%) | 0.6% (0.6%--0.8%) | 1.2% (1.2%--1.3%) |
@@ -145,13 +177,13 @@ We can use these coefficients to calculate the admissions for each MSOA and see 
 
 The following scatter plot shows the admissions for all MSOA:
 
-![](admissions_prediction_comparison.png)
+![](images/admissions_prediction_comparison.png)
 
 There is less variation from the equality diagonal line for the derived coefficients than for the SSNAP coefficients. The r-squared values have also increased from 0.46 for the SSNAP-derived coefficients to 0.59 for these coefficients.
 
-The following plots contain the same data as above but split into separate panels for each deprivation quantile.
+The following plots contain the same ``derived coefficients'' data as above but split into separate panels for each deprivation quantile.
 
-![](admissions_prediction_comparison_separate.png)
+![](images/admissions_prediction_comparison_separate.png)
 
 While previously there was a noticeably worse fit for the more-deprived areas, this effect has reduced when using the final coefficients. For example, the r-squared value for only the most-deprived areas was previously 0.01 (atrocious!) and is now 0.49 (better!).
 
@@ -170,7 +202,7 @@ We see that using this extreme range of values adds or subtracts around 10% from
 As a further test of the derived coefficients, we can compare the admissions numbers when we deliberately use the wrong set of coefficients.
 We pick out an MSOA in the middle deprivation quantile and with these population numbers...
 
-| Under 65 | 65 to 69 | 70 to 74 | 75 to 79 | Over 80 |
+| Under 65 | 65 to 69 | 70 to 74 | 75 to 79 | At least 80 |
 | --- | --- | --- | --- | --- |
 | 6710 | 476 | 450 | 360 | 528 |
 
@@ -181,12 +213,6 @@ We pick out an MSOA in the middle deprivation quantile and with these population
 | 14.3 | 17.5 | 15.5 | 14.0 | 14.0 | 12.1 |
 
 So applying the coefficients from the wrong deprivation quantile should make the difference of a handful of admissions.
-
-## Alternative ideas
-
-There is a link between the numbers of patients with good/fair/bad health and admission numbers. However the age data is known more accurately and completely and can more easily be projected into the future than health levels.
-
-The admissions and population data from multiple MSOA in the same deprivation quantile could be summed to create larger arbitrary areas and so reduce the effect of unusual observations (admissions in the observed years being much higher or lower than typical). This idea was excluded from the final analysis because it added a layer of complication without an obvious benefit to the results.
 
 
 ## Conclusion
